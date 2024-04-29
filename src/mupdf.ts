@@ -92,13 +92,13 @@ type Rotate = 0 | 90 | 180 | 270
 
 export const Matrix = {
 	identity: [ 1, 0, 0, 1, 0, 0 ] as Matrix,
-	scale(sx: number, sy: number) {
+	scale(sx: number, sy: number): Matrix {
 		return [ sx, 0, 0, sy, 0, 0 ]
 	},
-	translate(tx: number, ty: number) {
+	translate(tx: number, ty: number): Matrix {
 		return [ 1, 0, 0, 1, tx, ty ]
 	},
-	rotate(d: number) {
+	rotate(d: number): Matrix {
 		while (d < 0)
 			d += 360
 		while (d >= 360)
@@ -107,7 +107,7 @@ export const Matrix = {
 		let c = Math.cos((d * Math.PI) / 180)
 		return [ c, s, -s, c, 0, 0 ]
 	},
-	invert(m: Matrix) {
+	invert(m: Matrix): Matrix {
 		checkMatrix(m)
 		let det = m[0] * m[3] - m[1] * m[2]
 		if (det > -1e-23 && det < 1e-23)
@@ -121,7 +121,7 @@ export const Matrix = {
 		let invf = -m[4] * invb - m[5] * invd
 		return [ inva, invb, invc, invd, inve, invf ]
 	},
-	concat(one: Matrix, two: Matrix) {
+	concat(one: Matrix, two: Matrix): Matrix {
 		checkMatrix(one)
 		checkMatrix(two)
 		return [
@@ -155,7 +155,7 @@ export const Rect = {
 			rect[3] === Rect.MAX_INF_RECT
 		)
 	},
-	transform: function (rect: Rect, matrix: Matrix) {
+	transform: function (rect: Rect, matrix: Matrix): Rect {
 		checkRect(rect)
 		checkMatrix(matrix)
 		var t
@@ -1991,8 +1991,13 @@ export class PDFDocument extends Document {
 			return obj
 		if (obj === null || obj === undefined)
 			return this.newNull()
-		if (typeof obj === "string")
-			return this.newString(obj)
+		if (typeof obj === "string") {
+			// if a JS string is surrounded by parens, convert it to a PDF string
+			if (obj.startsWith("(") && obj.endsWith(")"))
+				return this.newString(obj.slice(1, -1))
+			// otherwise treat it as a name
+			return this.newName(obj)
+		}
 		if (typeof obj === "number") {
 			if (obj === (obj | 0))
 				return this.newInteger(obj)
@@ -2003,13 +2008,13 @@ export class PDFDocument extends Document {
 		if (obj instanceof Array) {
 			let result = this.newArray(obj.length)
 			for (let item of obj)
-				result.push(this._PDFOBJ(item))
+				result.push(item)
 			return result
 		}
 		if (obj instanceof Object) {
 			let result = this.newDictionary()
 			for (let key in obj)
-				result.put(key, this._PDFOBJ(obj[key]))
+				result.put(key, obj[key])
 			return result
 		}
 		throw new TypeError("cannot convert value to PDFObject")
@@ -2724,6 +2729,18 @@ type PDFAnnotationBorderStyle = "Solid" | "Dashed" | "Beveled" | "Inset" | "Unde
 
 type PDFAnnotationBorderEffect = "None" | "Cloudy"
 
+type PDFAnnotationIntent =
+	null |
+	"FreeTextCallout" |
+	"FreeTextTypeWriter" |
+	"LineArrow" |
+	"LineDimension" |
+	"PloyLine" |
+	"PolygonCloud" |
+	"PolygonDimension" |
+	"StampImage" |
+	"StampSnapshot"
+
 export class PDFAnnotation extends Userdata {
 	static override readonly _drop = libmupdf._wasm_pdf_drop_annot
 
@@ -2777,6 +2794,19 @@ export class PDFAnnotation extends Userdata {
 	static readonly BORDER_STYLE: PDFAnnotationBorderStyle[] = [ "Solid", "Dashed", "Beveled", "Inset", "Underline" ]
 
 	static readonly BORDER_EFFECT: PDFAnnotationBorderEffect[] = [ "None", "Cloudy" ]
+
+	static readonly INTENT: PDFAnnotationIntent[] = [
+		null,
+		"FreeTextCallout",
+		"FreeTextTypeWriter",
+		"LineArrow",
+		"LineDimension",
+		"PloyLine",
+		"PolygonCloud",
+		"PolygonDimension",
+		"StampImage",
+		"StampSnapshot"
+	]
 
 	// Bit masks for getFlags and setFlags
 	static readonly IS_INVISIBLE = 1 << (1 - 1)
@@ -3098,6 +3128,15 @@ export class PDFAnnotation extends Userdata {
 		this.clearBorderDash()
 		for (let v of list)
 			this.addBorderDashItem(v)
+	}
+
+	getIntent(): PDFAnnotationIntent {
+		return PDFAnnotation.INTENT[libmupdf._wasm_pdf_annot_intent(this.pointer)] || null
+	}
+
+	setIntent(value: PDFAnnotationIntent) {
+		let value_ix = ENUM<PDFAnnotationIntent>(value, PDFAnnotation.INTENT)
+		return libmupdf._wasm_pdf_set_annot_intent(this.pointer, value_ix)
 	}
 
 	setDefaultAppearance(fontName: string, size: number, color: Color) {
